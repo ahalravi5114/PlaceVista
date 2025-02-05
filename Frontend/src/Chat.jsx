@@ -4,7 +4,7 @@ import { PaperAirplaneIcon } from "@heroicons/react/solid";
 import Avatar from "react-avatar";
 import { motion } from "framer-motion";
 
-const socket = io("http://localhost:5000"); // Change this to your deployed backend URL
+const socket = io("https://placevista.onrender.com"); 
 
 const Chat = () => {
   const [messages, setMessages] = useState([]);
