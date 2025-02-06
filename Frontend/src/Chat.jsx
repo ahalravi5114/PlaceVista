@@ -18,24 +18,30 @@ const Chat = () => {
   };
 
   useEffect(() => {
-    // Prevent duplicate event listeners
+    const fetchMessages = async () => {
+      try {
+        const response = await fetch("https://placevista.onrender.com/messages");
+        const data = await response.json();
+        setMessages(data);
+      } catch (error) {
+        console.error("Error fetching messages:", error);
+      }
+    };
+  
+    fetchMessages();
+  
     const handleMessageReceived = (message) => {
-      setMessages((prevMessages) => {
-        if (!prevMessages.some((msg) => msg.id === message.id)) {
-          return [...prevMessages, message];
-        }
-        return prevMessages;
-      });
+      setMessages((prevMessages) => [...prevMessages, message]);
       scrollToBottom();
     };
-
+  
     socket.on("message", handleMessageReceived);
-
+  
     return () => {
       socket.off("message", handleMessageReceived);
     };
   }, []);
-
+  
   const sendMessage = (e) => {
     e.preventDefault();
     if (!input.trim()) return;

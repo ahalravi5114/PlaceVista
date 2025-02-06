@@ -17,6 +17,35 @@ const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } }); // Allow requests from any origin
 
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+
+  // Listen for incoming messages
+  socket.on("message", async (msg) => {
+    try {
+      const { userId, text, imageUrl, location } = msg;
+
+      // Save message to PostgreSQL
+      const result = await pool.query(
+        "INSERT INTO messages (user_id, text, image_url, location) VALUES ($1, $2, $3, $4) RETURNING *",
+        [userId, text || null, imageUrl || null, location || null]
+      );
+
+      const savedMessage = result.rows[0];
+
+      // Emit the saved message to all clients
+      io.emit("message", savedMessage);
+    } catch (error) {
+      console.error("Database error:", error);
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected");
+  });
+});
+
+
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -134,6 +163,18 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log("User disconnected");
   });
+});
+
+app.get("/messages", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT messages.*, users.fullname FROM messages JOIN users ON messages.user_id = users.id ORDER BY timestamp ASC"
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
 // Start server with Socket.io
