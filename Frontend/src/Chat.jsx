@@ -1,43 +1,47 @@
 import { useState, useEffect, useRef } from "react";
 import { PaperAirplaneIcon } from "@heroicons/react/solid";
 import Avatar from "react-avatar";
-import { io } from "socket.io-client"; // Ensure this line is present
+import { io } from "socket.io-client";
 import { motion } from "framer-motion";
-import ImageUpload from "./ImageUpload"; // Import the ImageUpload component
+import ImageUpload from "./ImageUpload";
 
 const socket = io("https://placevista.onrender.com");
 
 const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [uploadedImage, setUploadedImage] = useState(null);
-  const chatEndRef = useRef(null)
+  const chatEndRef = useRef(null);
 
+  // Scroll to bottom when new messages arrive
   const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    // Define the event handler function
+    // Prevent duplicate event listeners
     const handleMessageReceived = (message) => {
-      setMessages((prev) => [...prev, message]);
-      scrollToBottom()
+      setMessages((prevMessages) => {
+        if (!prevMessages.some((msg) => msg.id === message.id)) {
+          return [...prevMessages, message];
+        }
+        return prevMessages;
+      });
+      scrollToBottom();
     };
 
-    // Register the event listener
     socket.on("message", handleMessageReceived);
 
-    // Clean up the event listener when the component unmounts
     return () => {
       socket.off("message", handleMessageReceived);
     };
-  }, []); // Empty dependency array ensures this runs only once
+  }, []);
 
   const sendMessage = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
 
     const newMessage = {
+      id: Date.now(),
       text: input,
       sender: "You",
       time: new Date().toLocaleTimeString(),
@@ -46,27 +50,27 @@ const Chat = () => {
     socket.emit("message", newMessage);
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
-    scrollToBottom()
+    scrollToBottom();
   };
 
-  const handleImageUpload = (imageUrl) => {
-    setUploadedImage(imageUrl);
-
+  const handleImageUpload = (imageUrl, location) => {
     const imageMessage = {
-      text: "📷 Image Uploaded",
+      id: Date.now(),
+      text: `📷 Image Uploaded (${location || "Unknown Location"})`,
       sender: "You",
       imageUrl,
+      location,
       time: new Date().toLocaleTimeString(),
     };
 
     socket.emit("message", imageMessage);
     setMessages((prev) => [...prev, imageMessage]);
-    scrollToBottom()
+    scrollToBottom();
   };
 
   return (
     <div className="h-screen flex bg-gradient-to-br from-indigo-700 to-yellow-500">
-      {/* Sidebar (Optional) */}
+      {/* Sidebar */}
       <div className="w-64 bg-gradient-to-br from-indigo-700 to-yellow-500 text-white p-4 hidden md:flex flex-col">
         <h2 className="text-xl font-bold">PlaceVista</h2>
         <p className="mt-4 text-gray-400">Chat History</p>
@@ -104,7 +108,10 @@ const Chat = () => {
                 }`}
               >
                 {msg.imageUrl ? (
-                  <img src={msg.imageUrl} alt="Uploaded" className="rounded-lg max-w-full" />
+                  <>
+                    <img src={msg.imageUrl} alt="Uploaded" className="rounded-lg max-w-full" />
+                    <p className="text-xs">📍 {msg.location || "Unknown Location"}</p>
+                  </>
                 ) : (
                   <p className="text-sm">{msg.text}</p>
                 )}
