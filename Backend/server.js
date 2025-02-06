@@ -8,22 +8,57 @@ const http = require("http");
 const { Server } = require("socket.io");
 const multer = require("multer");
 const path = require("path");
-const fs = require('fs'); // Import the 'fs' module
+const fs = require("fs");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Create HTTP server for Socket.io
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } }); // Allow requests from any origin
+const io = new Server(server, { cors: { origin: "*" } });
 
+// Database connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+
+// Ensure 'uploads' directory exists
+const UPLOADS_DIR = path.join(__dirname, "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR);
+}
+
+// Serve uploaded files statically
+app.use("/uploads", express.static(UPLOADS_DIR));
+
+// Multer storage configuration
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage: storage });
+
+// Middleware
+app.use(express.json());
+app.use(cors());
+
+// ✅ SOCKET.IO Chat Handling
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  // Listen for incoming messages
   socket.on("message", async (msg) => {
     try {
       const { userId, text, imageUrl, location } = msg;
+
+      if (!userId) {
+        console.error("Missing userId in message:", msg);
+        return;
+      }
 
       // Save message to PostgreSQL
       const result = await pool.query(
@@ -33,7 +68,7 @@ io.on("connection", (socket) => {
 
       const savedMessage = result.rows[0];
 
-      // Emit the saved message to all clients
+      // Emit only the saved message
       io.emit("message", savedMessage);
     } catch (error) {
       console.error("Database error:", error);
@@ -44,39 +79,6 @@ io.on("connection", (socket) => {
     console.log("User disconnected");
   });
 });
-
-
-// Database connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-});
-
-// Ensure 'uploads' directory exists
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR);
-}
-
-// Serve uploaded files statically from the 'uploads' directory
-app.use("/uploads", express.static(UPLOADS_DIR));
-
-// Multer storage configuration
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOADS_DIR); // Use the UPLOADS_DIR constant
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
-const upload = multer({ storage: storage });
-
-// Middleware
-app.use(express.json());
-app.use(cors());
 
 // ✅ SIGNUP Route
 app.post("/signup", async (req, res) => {
@@ -118,27 +120,27 @@ app.post("/login", async (req, res) => {
 
 // ✅ Upload Image Route
 app.post("/upload", upload.single("image"), async (req, res) => {
-    console.log("Upload route hit"); // Debugging
-    if (!req.file) {
-        console.log("No file uploaded");
-        return res.status(400).json({ error: "No file uploaded" });
-    }
+  console.log("Upload route hit");
 
-    // Construct the image URL using a relative path
-    const imageUrl = `/uploads/${req.file.filename}`;
+  if (!req.file) {
+    console.log("No file uploaded");
+    return res.status(400).json({ error: "No file uploaded" });
+  }
 
-    try {
-        const result = await pool.query(
-            "INSERT INTO images (filename, image_url) VALUES ($1, $2) RETURNING *",
-            [req.file.filename, imageUrl]
-        );
+  const imageUrl = `/uploads/${req.file.filename}`;
 
-        console.log("Image saved to database:", result.rows[0]);
-        res.json({ success: true, imageUrl, image: result.rows[0] });
-    } catch (error) {
-        console.error("Database error:", error);
-        res.status(500).json({ error: "Database error", details: error.message });
-    }
+  try {
+    const result = await pool.query(
+      "INSERT INTO images (filename, image_url) VALUES ($1, $2) RETURNING *",
+      [req.file.filename, imageUrl]
+    );
+
+    console.log("Image saved to database:", result.rows[0]);
+    res.json({ success: true, imageUrl, image: result.rows[0] });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database error", details: error.message });
+  }
 });
 
 // ✅ Fetch Uploaded Images
@@ -152,19 +154,7 @@ app.get("/images", async (req, res) => {
   }
 });
 
-// ✅ SOCKET.IO Chat Handling
-io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
-
-  socket.on("message", (msg) => {
-    io.emit("message", msg);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected");
-  });
-});
-
+// ✅ Fetch Chat Messages with User Info
 app.get("/messages", async (req, res) => {
   try {
     const result = await pool.query(
