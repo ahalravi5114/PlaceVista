@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { io } from "socket.io-client";
 import { PaperAirplaneIcon } from "@heroicons/react/solid";
 import Avatar from "react-avatar";
 import { motion } from "framer-motion";
@@ -13,12 +12,19 @@ const Chat = () => {
   const [uploadedImage, setUploadedImage] = useState(null);
 
   useEffect(() => {
-    socket.on("message", (message) => {
+    // Define the event handler function
+    const handleMessage = (message) => {
       setMessages((prev) => [...prev, message]);
-    });
+    };
 
-    return () => socket.off("message");
-  }, []);
+    // Register the event listener
+    socket.on("message", handleMessage);
+
+    // Clean up the event listener when the component unmounts
+    return () => {
+      socket.off("message", handleMessage);
+    };
+  }, []); // Empty dependency array ensures this runs only once
 
   const sendMessage = (e) => {
     e.preventDefault();
@@ -47,6 +53,7 @@ const Chat = () => {
 
     socket.emit("message", imageMessage);
     setMessages((prev) => [...prev, imageMessage]);
+    // setInput(""); // if you are having issues of sending message twice comment this out
   };
 
   return (
