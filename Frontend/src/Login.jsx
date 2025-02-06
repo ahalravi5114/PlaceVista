@@ -11,7 +11,7 @@ const Login = () => {
     console.log("Logging with:", email, password);
     navigate("/chat");
   
-    const response = await fetch("http://localhost:5000/login", {
+    const response = await fetch("https://placevista.onrender.com/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
