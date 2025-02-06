@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PaperAirplaneIcon } from "@heroicons/react/solid";
 import Avatar from "react-avatar";
 import { io } from "socket.io-client"; // Ensure this line is present
@@ -11,19 +11,25 @@ const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [uploadedImage, setUploadedImage] = useState(null);
+  const chatEndRef = useRef(null)
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }
 
   useEffect(() => {
     // Define the event handler function
-    const handleMessage = (message) => {
+    const handleMessageReceived = (message) => {
       setMessages((prev) => [...prev, message]);
+      scrollToBottom()
     };
 
     // Register the event listener
-    socket.on("message", handleMessage);
+    socket.on("message", handleMessageReceived);
 
     // Clean up the event listener when the component unmounts
     return () => {
-      socket.off("message", handleMessage);
+      socket.off("message", handleMessageReceived);
     };
   }, []); // Empty dependency array ensures this runs only once
 
@@ -40,6 +46,7 @@ const Chat = () => {
     socket.emit("message", newMessage);
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
+    scrollToBottom()
   };
 
   const handleImageUpload = (imageUrl) => {
@@ -54,7 +61,7 @@ const Chat = () => {
 
     socket.emit("message", imageMessage);
     setMessages((prev) => [...prev, imageMessage]);
-    // setInput(""); // if you are having issues of sending message twice comment this out
+    scrollToBottom()
   };
 
   return (
@@ -105,6 +112,7 @@ const Chat = () => {
               </div>
             </motion.div>
           ))}
+          <div ref={chatEndRef} />
         </div>
 
         {/* Image Upload Section */}
