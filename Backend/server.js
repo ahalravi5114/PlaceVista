@@ -4,8 +4,10 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const http = require("http"); // Import HTTP module
-const { Server } = require("socket.io"); // Import Socket.io
+const http = require("http");
+const { Server } = require("socket.io");
+const multer = require("multer");
+const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -17,14 +19,24 @@ const io = new Server(server, { cors: { origin: "*" } });
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Needed for NeonDB
+  ssl: { rejectUnauthorized: false },
 });
+
+// Serve uploaded files
+app.use("/uploads", express.static("uploads"));
+
+// Multer storage for image uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
+});
+const upload = multer({ storage });
 
 // Middleware
 app.use(express.json());
 app.use(cors());
 
-// 🟢 SIGNUP Route
+// ✅ SIGNUP Route
 app.post("/signup", async (req, res) => {
   const { fullname, email, password } = req.body;
 
@@ -42,43 +54,62 @@ app.post("/signup", async (req, res) => {
   }
 });
 
-// 🟢 LOGIN Route
+// ✅ LOGIN Route
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    console.log("Login request received for:", email);
-
     const user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
-
-    if (user.rows.length === 0) {
-      console.log("User not found in database");
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-
-    console.log("User found:", user.rows[0]);
+    if (user.rows.length === 0) return res.status(400).json({ error: "Invalid credentials" });
 
     const isValidPassword = await bcrypt.compare(password, user.rows[0].password);
-    if (!isValidPassword) {
-      console.log("Password incorrect");
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
+    if (!isValidPassword) return res.status(400).json({ error: "Invalid credentials" });
 
     const token = jwt.sign({ userId: user.rows[0].id }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
     res.json({ message: "Login successful", token, user: user.rows[0] });
   } catch (err) {
-    console.error("Login error:", err);
+    console.error(err);
     res.status(500).json({ error: "Login failed", details: err.message });
   }
 });
 
-// 🟢 SOCKET.IO Chat Handling
+// ✅ Upload Image Route
+app.post("/upload", upload.single("image"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  const imageUrl = `https://placevista.onrender.com/uploads/${req.file.filename}`;
+
+  try {
+    const result = await pool.query(
+      "INSERT INTO images (filename, image_url) VALUES ($1, $2) RETURNING *",
+      [req.file.filename, imageUrl]
+    );
+
+    res.json({ success: true, imageUrl, image: result.rows[0] });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ✅ Fetch Uploaded Images
+app.get("/images", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM images ORDER BY uploaded_at DESC");
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ✅ SOCKET.IO Chat Handling
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
   socket.on("message", (msg) => {
-    io.emit("message", msg); // Broadcast message to all users
+    io.emit("message", msg);
   });
 
   socket.on("disconnect", () => {
