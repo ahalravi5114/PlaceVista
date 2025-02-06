@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { PaperAirplaneIcon } from "@heroicons/react/solid";
 import Avatar from "react-avatar";
+import { io } from "socket.io-client"; // Ensure this line is present
 import { motion } from "framer-motion";
 import ImageUpload from "./ImageUpload"; // Import the ImageUpload component
 
