@@ -9,28 +9,31 @@ const ImageUpload = ({ onUpload }) => {
   };
 
   const uploadImage = async () => {
-    if (!selectedFile) return alert("Please select an image!");
-  
+    if (!selectedFile) {
+      alert("Please select an image!");
+      return;
+    }
+
     const formData = new FormData();
     formData.append("image", selectedFile);
-  
+
     try {
       setUploading(true);
-      const response = await fetch("https://placevista.onrender.com/upload", {
+      const response = await fetch("https://placevista.onrender.com/upload", { // Ensure correct endpoint
         method: "POST",
         body: formData,
       });
-  
+
       if (!response.ok) {
-        throw new Error(`Server Error: ${response.status} ${response.statusText}`);
+        // Improved error handling
+        const errorText = await response.text(); // Get the error message from the response
+        throw new Error(`Server Error: ${response.status} - ${errorText}`);
       }
-  
-      const data = await response.json().catch(() => {
-        throw new Error("Invalid JSON response from server");
-      });
-  
+
+      const data = await response.json();
+
       setUploading(false);
-  
+
       if (data.imageUrl) {
         onUpload(data.imageUrl);
       } else {
@@ -39,14 +42,14 @@ const ImageUpload = ({ onUpload }) => {
     } catch (error) {
       setUploading(false);
       console.error("Upload error:", error);
-      alert(`Upload failed: ${error.message}`);
+      alert(`Upload failed: ${error.message}`); // Show detailed error message
     }
   };
-  
+
   return (
     <div className="p-4">
       <input type="file" onChange={handleFileChange} className="mb-2" />
-      <button onClick={uploadImage} className="bg-indigo-600 text-white px-4 py-2 rounded">
+      <button onClick={uploadImage} className="bg-indigo-600 text-white px-4 py-2 rounded" disabled={uploading}>
         {uploading ? "Uploading..." : "Upload"}
       </button>
     </div>

@@ -8,13 +8,14 @@ const http = require("http");
 const { Server } = require("socket.io");
 const multer = require("multer");
 const path = require("path");
+const fs = require('fs'); // Import the 'fs' module
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Create HTTP server for Socket.io
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { cors: { origin: "*" } }); // Allow requests from any origin
 
 // Database connection
 const pool = new Pool({
@@ -22,15 +23,27 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Serve uploaded files
-app.use("/uploads", express.static("uploads"));
+// Ensure 'uploads' directory exists
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR);
+}
 
-// Multer storage for image uploads
+// Serve uploaded files statically from the 'uploads' directory
+app.use("/uploads", express.static(UPLOADS_DIR));
+
+// Multer storage configuration
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
+  destination: (req, file, cb) => {
+    cb(null, UPLOADS_DIR); // Use the UPLOADS_DIR constant
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  },
 });
-const upload = multer({ storage });
+
+const upload = multer({ storage: storage });
 
 // Middleware
 app.use(express.json());
@@ -76,21 +89,27 @@ app.post("/login", async (req, res) => {
 
 // ✅ Upload Image Route
 app.post("/upload", upload.single("image"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    console.log("Upload route hit"); // Debugging
+    if (!req.file) {
+        console.log("No file uploaded");
+        return res.status(400).json({ error: "No file uploaded" });
+    }
 
-  const imageUrl = `https://placevista.onrender.com/uploads/${req.file.filename}`;
+    // Construct the image URL using a relative path
+    const imageUrl = `/uploads/${req.file.filename}`;
 
-  try {
-    const result = await pool.query(
-      "INSERT INTO images (filename, image_url) VALUES ($1, $2) RETURNING *",
-      [req.file.filename, imageUrl]
-    );
+    try {
+        const result = await pool.query(
+            "INSERT INTO images (filename, image_url) VALUES ($1, $2) RETURNING *",
+            [req.file.filename, imageUrl]
+        );
 
-    res.json({ success: true, imageUrl, image: result.rows[0] });
-  } catch (error) {
-    console.error("Database error:", error);
-    res.status(500).json({ error: "Database error" });
-  }
+        console.log("Image saved to database:", result.rows[0]);
+        res.json({ success: true, imageUrl, image: result.rows[0] });
+    } catch (error) {
+        console.error("Database error:", error);
+        res.status(500).json({ error: "Database error", details: error.message });
+    }
 });
 
 // ✅ Fetch Uploaded Images
