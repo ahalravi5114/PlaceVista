@@ -14,7 +14,7 @@ const ExifParser = require("exif-parser");
 const app = express();
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server);
 const cors = require("cors");
 app.use(cors({ origin: "*" }));
 
