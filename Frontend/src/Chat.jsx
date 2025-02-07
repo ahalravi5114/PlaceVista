@@ -12,76 +12,32 @@ const Chat = () => {
   const [input, setInput] = useState("");
   const chatEndRef = useRef(null);
 
-  // Scroll to bottom when new messages arrive
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
   useEffect(() => {
-    console.log("🔌 Connecting to Socket.io...");
-
     const fetchMessages = async () => {
       try {
         const response = await fetch("https://placevista.onrender.com/messages");
         const data = await response.json();
         setMessages(data);
       } catch (error) {
-        console.error("❌ Error fetching messages:", error);
+        console.error("Error fetching messages:", error);
       }
     };
 
     fetchMessages();
 
-    const handleMessageReceived = (message) => {
-      console.log("📨 New message received:", message);
-      setMessages((prevMessages) => [...prevMessages, message]);
-      scrollToBottom();
-    };
-
-    socket.on("message", handleMessageReceived);
+    socket.on("message", (message) => {
+      setMessages((prev) => [...prev, message]);
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
 
     return () => {
-      socket.off("message", handleMessageReceived);
+      socket.off("message");
     };
   }, []);
 
   const sendMessage = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-
-    console.log("📤 Sending message:", input);
-
-    let botReply = null;
-    const lowerInput = input.toLowerCase();
-
-    if (["hi", "hello", "hey"].includes(lowerInput)) {
-      botReply = "Hello! How can I assist you today? 😊";
-    } else if (lowerInput.includes("where am i")) {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const { latitude, longitude } = position.coords;
-            const locationMessage = {
-              id: Date.now(),
-              text: `📍 You are at Latitude: ${latitude}, Longitude: ${longitude}`,
-              sender: "Bot",
-              time: new Date().toLocaleTimeString(),
-            };
-            console.log("📍 Location found:", locationMessage.text);
-            setMessages((prev) => [...prev, locationMessage]);
-            socket.emit("message", locationMessage);
-          },
-          (error) => {
-            console.error("❌ Geolocation error:", error);
-            sendBotMessage("Sorry, I couldn't fetch your location. Please check your GPS settings.");
-          }
-        );
-      } else {
-        sendBotMessage("Your browser does not support geolocation.");
-      }
-    } else if (lowerInput.includes("search image")) {
-      botReply = "🔍 Please upload an image, and I'll try to find relevant results.";
-    }
 
     const newMessage = {
       id: Date.now(),
@@ -90,36 +46,15 @@ const Chat = () => {
       time: new Date().toLocaleTimeString(),
     };
 
-    console.log("📤 Emitting message to server:", newMessage);
     socket.emit("message", newMessage);
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
-
-    if (botReply) {
-      console.log("🤖 Sending bot reply:", botReply);
-      sendBotMessage(botReply);
-    }
-  };
-
-  const sendBotMessage = (message) => {
-    const botResponse = {
-      id: Date.now(),
-      text: message,
-      sender: "Bot",
-      time: new Date().toLocaleTimeString(),
-    };
-
-    console.log("🤖 Bot response:", botResponse);
-    setMessages((prev) => [...prev, botResponse]);
-    socket.emit("message", botResponse);
   };
 
   const handleImageUpload = (imageUrl, location) => {
-    console.log("📷 Image uploaded:", imageUrl, "Location:", location);
-
     const imageMessage = {
       id: Date.now(),
-      text: `📷 Image Uploaded (${location || "Unknown Location"})`,
+      text: "📷 Image Uploaded",
       sender: "You",
       imageUrl,
       location,
@@ -128,38 +63,19 @@ const Chat = () => {
 
     socket.emit("message", imageMessage);
     setMessages((prev) => [...prev, imageMessage]);
-
-    setTimeout(() => {
-      const botReply = "🖼️ Image received! Processing...";
-      console.log("🤖 Sending bot response:", botReply);
-      sendBotMessage(botReply);
-    }, 1000);
   };
 
   return (
     <div className="h-screen flex bg-gradient-to-br from-indigo-700 to-yellow-500">
-      {/* Sidebar */}
-      <div className="w-64 bg-gradient-to-br from-indigo-700 to-yellow-500 text-white p-4 hidden md:flex flex-col">
-        <h2 className="text-xl font-bold">PlaceVista</h2>
-        <p className="mt-4 text-gray-400">Chat History</p>
-        <ul className="mt-2 space-y-2">
-          <li className="p-2 bg-indigo-700 rounded-lg cursor-pointer">Recent Chat</li>
-        </ul>
-      </div>
-
-      {/* Chat Container */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
         className="flex-1 flex flex-col items-center bg-white max-w-full mx-auto p-6"
       >
-        {/* Chat Header */}
         <div className="bg-yellow-600 text-white p-4 w-full text-center font-bold text-xl rounded-t-2xl">
           PlaceVista Chat
         </div>
-
-        {/* Messages */}
         <div className="flex-1 w-full p-4 overflow-y-auto space-y-4 scrollbar-hide">
           {messages.map((msg, index) => (
             <motion.div
@@ -178,7 +94,16 @@ const Chat = () => {
                 {msg.imageUrl ? (
                   <>
                     <img src={msg.imageUrl} alt="Uploaded" className="rounded-lg max-w-full" />
-                    <p className="text-xs">📍 {msg.location || "Unknown Location"}</p>
+                    {msg.location && (
+                      <a
+                        href={`https://www.google.com/maps?q=${msg.location.latitude},${msg.location.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-gray-200 underline"
+                      >
+                        📍 View on Google Maps
+                      </a>
+                    )}
                   </>
                 ) : (
                   <p className="text-sm">{msg.text}</p>
@@ -189,11 +114,7 @@ const Chat = () => {
           ))}
           <div ref={chatEndRef} />
         </div>
-
-        {/* Image Upload Section */}
         <ImageUpload onUpload={handleImageUpload} />
-
-        {/* Input Box */}
         <form onSubmit={sendMessage} className="p-4 w-full bg-gray-100 flex items-center rounded-b-2xl shadow-inner">
           <input
             type="text"
