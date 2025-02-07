@@ -45,19 +45,67 @@ const Chat = () => {
   const sendMessage = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-
+  
+    let botReply = null;
+  
+    // Basic chatbot logic
+    const lowerInput = input.toLowerCase();
+    if (["hi", "hello", "hey"].includes(lowerInput)) {
+      botReply = "Hello! How can I assist you today? 😊";
+    } else if (lowerInput.includes("where am i")) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            botReply = `📍 You are at Latitude: ${latitude}, Longitude: ${longitude}`;
+            const locationMessage = {
+              id: Date.now(),
+              text: botReply,
+              sender: "Bot",
+              time: new Date().toLocaleTimeString(),
+            };
+            setMessages((prev) => [...prev, locationMessage]);
+            socket.emit("message", locationMessage);
+          },
+          (error) => {
+            console.error("Geolocation error:", error);
+            botReply = "Sorry, I couldn't fetch your location. Please check your GPS settings.";
+            sendBotMessage(botReply);
+          }
+        );
+      } else {
+        botReply = "Your browser does not support geolocation.";
+      }
+    } else if (lowerInput.includes("search image")) {
+      botReply = "🔍 Please upload an image, and I'll try to find relevant results.";
+    }
+  
     const newMessage = {
       id: Date.now(),
       text: input,
       sender: "You",
       time: new Date().toLocaleTimeString(),
     };
-
+  
     socket.emit("message", newMessage);
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
-    scrollToBottom();
+  
+    if (botReply) sendBotMessage(botReply);
   };
+  
+  const sendBotMessage = (message) => {
+    const botResponse = {
+      id: Date.now(),
+      text: message,
+      sender: "Bot",
+      time: new Date().toLocaleTimeString(),
+    };
+  
+    setMessages((prev) => [...prev, botResponse]);
+    socket.emit("message", botResponse);
+  };
+  
 
   const handleImageUpload = (imageUrl, location) => {
     const imageMessage = {
@@ -68,11 +116,15 @@ const Chat = () => {
       location,
       time: new Date().toLocaleTimeString(),
     };
-
+  
     socket.emit("message", imageMessage);
     setMessages((prev) => [...prev, imageMessage]);
-    scrollToBottom();
+  
+    // Bot response
+    const botReply = "🖼️ Image received! Processing...";
+    sendBotMessage(botReply);
   };
+  
 
   return (
     <div className="h-screen flex bg-gradient-to-br from-indigo-700 to-yellow-500">
