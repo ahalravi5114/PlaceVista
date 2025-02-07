@@ -16,6 +16,7 @@ const Chat = () => {
     const fetchMessages = async () => {
       try {
         const response = await fetch("https://placevista.onrender.com/messages");
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const data = await response.json();
         setMessages(data);
       } catch (error) {
