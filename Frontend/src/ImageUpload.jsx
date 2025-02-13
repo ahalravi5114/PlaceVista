@@ -19,9 +19,9 @@ const ImageUpload = ({ onUpload }) => {
 
     try {
       setUploading(true);
-      const response = await fetch("https://placevista.onrender.com/upload", {
-        method: "POST",
-        body: formData,
+      const response = await fetch("https://placevista.onrender.com/analyze-image", { // Changed to /analyze-image
+          method: "POST",
+          body: formData,
       });
 
       if (!response.ok) throw new Error(`Server Error: ${response.status}`);
@@ -29,10 +29,10 @@ const ImageUpload = ({ onUpload }) => {
       const data = await response.json();
       setUploading(false);
 
-      if (data.imageUrl) {
-        onUpload(data.imageUrl, data.location || "Unknown Location");
+      if (data.success) {
+          onUpload(data.imageUrl, data.places); // Send places data
       } else {
-        alert("Upload failed: No image URL returned");
+          alert("Upload failed: " + (data.message || "Unknown error"));
       }
     } catch (error) {
       setUploading(false);

@@ -9,6 +9,8 @@ const { Server } = require("socket.io");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const vision = require('@google-cloud/vision'); // Google Cloud Vision API
+const { Client } = require("@googlemaps/google-maps-services-js"); // Google Maps API
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -145,6 +147,50 @@ app.post("/upload", upload.single("image"), async (req, res) => {
   } catch (error) {
     console.error("Database error:", error);
     res.status(500).json({ error: "Database error", details: error.message });
+  }
+});
+
+const visionClient = new vision.ImageAnnotatorClient({
+  keyFilename: 'path/to/your/google/credentials.json' // Replace with your credentials file
+});
+
+// Google Maps API setup
+const googleMapsClient = new Client({
+  apiKey: process.env.GOOGLE_MAPS_API_KEY,
+});
+
+app.post("/analyze-image", upload.single("image"), async (req, res) => {
+  if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  try {
+      const [visionResult] = await visionClient.labelDetection(req.file.path);
+      const labels = visionResult.labelAnnotations;
+
+      const locations = labels.filter(label => label.description.toLowerCase().includes('place') || label.description.toLowerCase().includes('landmark'));
+
+      if (locations.length > 0) {
+          const placeName = locations[0].description;
+
+          googleMapsClient.places({
+              query: placeName,
+          }, (err, response) => {
+              if (err) {
+                  console.error("Google Maps API Error:", err);
+                  return res.status(500).json({ error: "Location search failed" });
+              }
+
+              const places = response.data.results;
+              res.json({ success: true, imageUrl: `/uploads/${req.file.filename}`, places });
+          });
+      } else {
+          res.json({ success: true, imageUrl: `/uploads/${req.file.filename}`, message: "No specific locations found" });
+      }
+
+  } catch (error) {
+      console.error("Vision API error:", error);
+      res.status(500).json({ error: "Image analysis failed" });
   }
 });
 

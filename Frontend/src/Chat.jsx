@@ -4,6 +4,7 @@ import Avatar from "react-avatar";
 import { io } from "socket.io-client";
 import { motion } from "framer-motion";
 import ImageUpload from "./ImageUpload";
+import MapComponent from "./component/MapComponent";
 
 const socket = io("https://placevista.onrender.com", {
   transports: ["websocket", "polling"],
@@ -45,8 +46,10 @@ const Chat = () => {
   const sendMessage = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-
+  
     console.log("📤 Sending message:", input);
+  
+    const userId = "guest-" + Math.random().toString(36).substr(2, 9); 
 
     let botReply = null;
     const lowerInput = input.toLowerCase();
@@ -85,6 +88,7 @@ const Chat = () => {
       id: Date.now(),
       text: input,
       sender: "You",
+      userId,  // ✅ Add userId
       time: new Date().toLocaleTimeString(),
     };
 
@@ -109,6 +113,19 @@ const Chat = () => {
     socket.emit("message", botResponse);
   };
 
+  const handleImageUploaded = (imageUrl, places) => {  // <-- NEW FUNCTION
+    const imageMessage = {
+        id: Date.now(),
+        text: `📷 Image Uploaded`, // Simplified text
+        sender: "You",
+        imageUrl,
+        places, // Include the places data
+        time: new Date().toLocaleTimeString(),
+    };
+    socket.emit("message", imageMessage);
+    setMessages((prev) => [...prev, imageMessage]);
+  };
+
   return (
     <div className="h-screen flex bg-gradient-to-br from-indigo-700 to-yellow-500">
       <div className="w-64 bg-gradient-to-br from-indigo-700 to-yellow-500 text-white p-4 hidden md:flex flex-col">
@@ -125,33 +142,32 @@ const Chat = () => {
         </div>
 
         <div className="flex-1 w-full p-4 overflow-y-auto space-y-4 scrollbar-hide">
-          {messages.map((msg, index) => (
-            <motion.div
-              key={index}
-              className={`flex ${msg.sender === "You" ? "justify-end" : "justify-start"}`}
-            >
-              {msg.sender !== "You" && <Avatar name={msg.sender} size="40" round className="mr-2" />}
-              <div className={`p-3 max-w-xs text-white rounded-lg shadow-lg ${msg.sender === "You" ? "bg-indigo-600 ml-2" : "bg-yellow-500 mr-2"}`}>
-                <p className="text-sm">{msg.text}</p>
-                <p className="text-xs text-gray-200 mt-1 text-right">{msg.time}</p>
-              </div>
-            </motion.div>
+        {messages.map((msg, index) => (
+          <motion.div
+          key={index}
+          className={`flex ${msg.sender === "You" ? "justify-end" : "justify-start"}`}
+          >
+        {msg.sender !== "You" && <Avatar name={msg.sender} size="40" round className="mr-2" />}
+        <div className={`p-3 max-w-xs text-white rounded-lg shadow-lg ${msg.sender === "You" ? "bg-indigo-600 ml-2" : "bg-yellow-500 mr-2"}`}>
+            <p className="text-sm">{msg.text}</p>
+            <p className="text-xs text-gray-200 mt-1 text-right">{msg.time}</p>
+            {msg.imageUrl && msg.places && msg.places.length > 0 && (
+                <div className="mt-2">  {/* Add some margin top */}
+                    <h3>{msg.places[0].name}</h3>
+                    <p>{msg.places[0].formatted_address}</p>
+                    <MapComponent center={{
+                        lat: msg.places[0].geometry.location.lat,
+                        lng: msg.places[0].geometry.location.lng,
+                    }} />
+                </div>
+            )}
+          </div>
+           </motion.div>
           ))}
-          <div ref={chatEndRef} />
+         <div ref={chatEndRef} />
         </div>
 
-        <ImageUpload onUpload={(imageUrl, location) => {
-          const imageMessage = {
-            id: Date.now(),
-            text: `📷 Image Uploaded (${location || "Unknown Location"})`,
-            sender: "You",
-            imageUrl,
-            location,
-            time: new Date().toLocaleTimeString(),
-          };
-          socket.emit("message", imageMessage);
-          setMessages((prev) => [...prev, imageMessage]);
-        }} />
+        <ImageUpload onUpload={handleImageUploaded} /> 
 
         <form onSubmit={sendMessage} className="p-4 w-full bg-gray-100 flex items-center rounded-b-2xl shadow-inner">
           <input
