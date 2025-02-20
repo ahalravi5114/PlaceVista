@@ -11,6 +11,7 @@ const path = require("path");
 const fs = require("fs");
 const vision = require('@google-cloud/vision'); // Google Cloud Vision API
 const { Client } = require("@googlemaps/google-maps-services-js"); // Google Maps API
+const axios = require("axios"); // Import axios for proxying requests
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -31,28 +32,25 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// ✅ Ensure 'uploads' directory exists
-const UPLOADS_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR);
-}
-
-// ✅ Serve uploaded files statically
-app.use("/uploads", express.static(UPLOADS_DIR));
-
-// ✅ Multer storage configuration
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
-  },
-});
-const upload = multer({ storage });
-
 // ✅ Middleware
 app.use(express.json());
-app.use(cors({ origin: "*", methods: ["GET", "POST"], credentials: true }));
+app.use(cors({ 
+  origin: ["http://localhost:5173", "https://placevista.onrender.com"],
+  methods: ["GET", "POST"],
+  credentials: true 
+}));
+
+// ✅ Proxy route for external API (Fixes CORS issue)
+app.get("/api/chat", async (req, res) => {
+  try {
+    const userMessage = req.query.msg;
+    const response = await axios.get(`https://api.monkedev.com/fun/chat?msg=${encodeURIComponent(userMessage)}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error fetching chat response:", error);
+    res.status(500).json({ error: "Failed to fetch chat response" });
+  }
+});
 
 // ✅ SOCKET.IO Chat Handling
 io.on("connection", (socket) => {
@@ -122,101 +120,6 @@ app.post("/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Login failed", details: err.message });
-  }
-});
-
-// ✅ Upload Image Route
-app.post("/upload", upload.single("image"), async (req, res) => {
-  console.log("Upload route hit");
-
-  if (!req.file) {
-    console.log("No file uploaded");
-    return res.status(400).json({ error: "No file uploaded" });
-  }
-
-  const imageUrl = `/uploads/${req.file.filename}`;
-
-  try {
-    const result = await pool.query(
-      "INSERT INTO images (filename, image_url) VALUES ($1, $2) RETURNING *",
-      [req.file.filename, imageUrl]
-    );
-
-    console.log("Image saved to database:", result.rows[0]);
-    res.json({ success: true, imageUrl, image: result.rows[0] });
-  } catch (error) {
-    console.error("Database error:", error);
-    res.status(500).json({ error: "Database error", details: error.message });
-  }
-});
-
-const visionClient = new vision.ImageAnnotatorClient({
-  keyFilename: 'path/to/your/google/credentials.json' // Replace with your credentials file
-});
-
-// Google Maps API setup
-const googleMapsClient = new Client({
-  apiKey: process.env.GOOGLE_MAPS_API_KEY,
-});
-
-app.post("/analyze-image", upload.single("image"), async (req, res) => {
-  if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-  }
-
-  try {
-      const [visionResult] = await visionClient.labelDetection(req.file.path);
-      const labels = visionResult.labelAnnotations;
-
-      const locations = labels.filter(label => label.description.toLowerCase().includes('place') || label.description.toLowerCase().includes('landmark'));
-
-      if (locations.length > 0) {
-          const placeName = locations[0].description;
-
-          googleMapsClient.places({
-              query: placeName,
-          }, (err, response) => {
-              if (err) {
-                  console.error("Google Maps API Error:", err);
-                  return res.status(500).json({ error: "Location search failed" });
-              }
-
-              const places = response.data.results;
-              res.json({ success: true, imageUrl: `/uploads/${req.file.filename}`, places });
-          });
-      } else {
-          res.json({ success: true, imageUrl: `/uploads/${req.file.filename}`, message: "No specific locations found" });
-      }
-
-  } catch (error) {
-      console.error("Vision API error:", error);
-      res.status(500).json({ error: "Image analysis failed" });
-  }
-});
-
-// ✅ Fetch Uploaded Images
-app.get("/images", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM images ORDER BY uploaded_at DESC");
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Database error:", error);
-    res.status(500).json({ error: "Database error" });
-  }
-});
-
-// ✅ Fetch Chat Messages with User Info
-app.get("/messages", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT messages.*, users.fullname FROM messages JOIN users ON messages.user_id = users.id ORDER BY timestamp ASC"
-    );
-    
-    // Ensure response is JSON
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Database error:", error);
-    res.status(500).json({ error: "Database error" });
   }
 });
 

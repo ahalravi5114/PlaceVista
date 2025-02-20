@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { PaperAirplaneIcon } from "@heroicons/react/solid";
+import { PaperAirplaneIcon, MicrophoneIcon, CameraIcon, PaperClipIcon } from "@heroicons/react/solid";
 import Avatar from "react-avatar";
 import { io } from "socket.io-client";
 import { motion } from "framer-motion";
-import ImageUpload from "./ImageUpload";
-import MapComponent from "./component/MapComponent";
 
 const socket = io("https://placevista.onrender.com", {
   transports: ["websocket", "polling"],
@@ -43,87 +41,102 @@ const Chat = () => {
     };
   }, []);
 
-  const sendMessage = (e) => {
+  const sendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
   
     console.log("📤 Sending message:", input);
   
-    const userId = "guest-" + Math.random().toString(36).substr(2, 9); 
-
-    let botReply = null;
-    const lowerInput = input.toLowerCase();
-
-    if (["hi", "hello", "hey"].includes(lowerInput)) {
-      botReply = "Hello! How can I assist you today? 😊";
-    } else if (lowerInput.includes("where am i")) {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const { latitude, longitude } = position.coords;
-            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`)
-              .then((res) => res.json())
-              .then((data) => {
-                const locationMessage = {
-                  id: Date.now(),
-                  text: `📍 You are at ${data.display_name}`,
-                  sender: "Bot",
-                  time: new Date().toLocaleTimeString(),
-                };
-                setMessages((prev) => [...prev, locationMessage]);
-                socket.emit("message", locationMessage);
-              })
-              .catch(() => sendBotMessage("I found your coordinates but couldn't fetch your exact address."));
-          },
-          () => sendBotMessage("Sorry, I couldn't fetch your location. Please check your GPS settings.")
-        );
-      } else {
-        sendBotMessage("Your browser does not support geolocation.");
-      }
-    } else if (lowerInput.includes("search image")) {
-      botReply = "🔍 Please upload an image, and I'll try to find relevant results.";
-    }
-
     const newMessage = {
       id: Date.now(),
       text: input,
       sender: "You",
-      userId,  // ✅ Add userId
       time: new Date().toLocaleTimeString(),
     };
-
-    socket.emit("message", newMessage);
+  
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
-
-    if (botReply) {
-      sendBotMessage(botReply);
+  
+    // ✅ Send message to your backend instead of external API
+    try {
+      const response = await fetch(`https://placevista.onrender.com/api/chat?msg=${encodeURIComponent(input)}`);
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch chat response");
+      }
+  
+      const data = await response.json();
+      const botMessage = {
+        id: Date.now() + 1,
+        text: data.response,
+        sender: "Bot",
+        time: new Date().toLocaleTimeString(),
+      };
+      
+      setMessages((prev) => [...prev, botMessage]);
+    } catch (error) {
+      console.error("❌ Error fetching chatbot response:", error);
     }
   };
+  
 
-  const sendBotMessage = (message) => {
-    const botResponse = {
-      id: Date.now(),
-      text: message,
-      sender: "Bot",
-      time: new Date().toLocaleTimeString(),
+  const handleAudioInput = () => {
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "en-US";
+    recognition.start();
+
+    recognition.onresult = (event) => {
+      setInput(event.results[0][0].transcript);
     };
 
-    setMessages((prev) => [...prev, botResponse]);
-    socket.emit("message", botResponse);
+    recognition.onerror = () => {
+      console.error("Speech recognition error.");
+    };
   };
 
-  const handleImageUploaded = (imageUrl, places) => {  // <-- NEW FUNCTION
-    const imageMessage = {
-        id: Date.now(),
-        text: `📷 Image Uploaded`, // Simplified text
-        sender: "You",
-        imageUrl,
-        places, // Include the places data
-        time: new Date().toLocaleTimeString(),
+  const handleCameraCapture = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.capture = "environment";
+    input.onchange = (event) => {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        const imageMessage = {
+          id: Date.now(),
+          text: `📷 Image Uploaded`,
+          sender: "You",
+          imageUrl: reader.result,
+          time: new Date().toLocaleTimeString(),
+        };
+        setMessages((prev) => [...prev, imageMessage]);
+      };
+      reader.readAsDataURL(file);
     };
-    socket.emit("message", imageMessage);
-    setMessages((prev) => [...prev, imageMessage]);
+    input.click();
+  };
+
+  const handleFileUpload = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "*/*";
+    input.onchange = (event) => {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        const fileMessage = {
+          id: Date.now(),
+          text: `📎 File Uploaded: ${file.name}`,
+          sender: "You",
+          fileUrl: reader.result,
+          time: new Date().toLocaleTimeString(),
+        };
+        setMessages((prev) => [...prev, fileMessage]);
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
   };
 
   return (
@@ -142,43 +155,41 @@ const Chat = () => {
         </div>
 
         <div className="flex-1 w-full p-4 overflow-y-auto space-y-4 scrollbar-hide">
-        {messages.map((msg, index) => (
-          <motion.div
-          key={index}
-          className={`flex ${msg.sender === "You" ? "justify-end" : "justify-start"}`}
-          >
-        {msg.sender !== "You" && <Avatar name={msg.sender} size="40" round className="mr-2" />}
-        <div className={`p-3 max-w-xs text-white rounded-lg shadow-lg ${msg.sender === "You" ? "bg-indigo-600 ml-2" : "bg-yellow-500 mr-2"}`}>
-            <p className="text-sm">{msg.text}</p>
-            <p className="text-xs text-gray-200 mt-1 text-right">{msg.time}</p>
-            {msg.imageUrl && msg.places && msg.places.length > 0 && (
-                <div className="mt-2">  {/* Add some margin top */}
-                    <h3>{msg.places[0].name}</h3>
-                    <p>{msg.places[0].formatted_address}</p>
-                    <MapComponent center={{
-                        lat: msg.places[0].geometry.location.lat,
-                        lng: msg.places[0].geometry.location.lng,
-                    }} />
-                </div>
-            )}
-          </div>
-           </motion.div>
+          {messages.map((msg, index) => (
+            <motion.div key={index} className={`flex ${msg.sender === "You" ? "justify-end" : "justify-start"}`}>
+              {msg.sender !== "You" && <Avatar name={msg.sender} size="40" round className="mr-2" />}
+              <div className={`p-3 max-w-xs text-white rounded-lg shadow-lg ${msg.sender === "You" ? "bg-indigo-600 ml-2" : "bg-yellow-500 mr-2"}`}>
+                <p className="text-sm">{msg.text}</p>
+                <p className="text-xs text-gray-200 mt-1 text-right">{msg.time}</p>
+              </div>
+            </motion.div>
           ))}
-         <div ref={chatEndRef} />
+          <div ref={chatEndRef} />
         </div>
 
-        <ImageUpload onUpload={handleImageUploaded} /> 
+        <form onSubmit={sendMessage} className="p-4 w-full bg-gray-100 flex items-center rounded-b-2xl shadow-inner space-y-4">
+          <div className="flex space-x-2"> 
+            <button type="button" onClick={handleAudioInput} className="w-10 h-10 flex items-center justify-center bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
+              <MicrophoneIcon className="w-5 h-5" />
+            </button>
+            <button type="button" onClick={handleCameraCapture} className="w-10 h-10 flex items-center justify-center bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
+              <CameraIcon className="w-5 h-5" />
+            </button>
+            <button type="button" onClick={handleFileUpload} className="w-10 h-10 flex items-center justify-center bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
+              <PaperClipIcon className="w-5 h-5" />
+            </button>
+          </div>
 
-        <form onSubmit={sendMessage} className="p-4 w-full bg-gray-100 flex items-center rounded-b-2xl shadow-inner">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-yellow-600 text-gray-700"
-            placeholder="Type your message..."
+          <input 
+            type="text" 
+            value={input} 
+            onChange={(e) => setInput(e.target.value)} 
+            className="flex-1 p-2 border rounded-lg ml-4" 
+            placeholder="Type your message..." 
           />
-          <button type="submit" className="ml-2 bg-yellow-600 text-white p-2 rounded-lg hover:bg-yellow-700">
-            <PaperAirplaneIcon className="w-6 h-6" />
+
+          <button type="submit" className="w-10 h-10 flex items-center justify-center bg-yellow-600 text-white rounded-lg ml-2 hover:bg-yellow-700">
+            <PaperAirplaneIcon className="w-5 h-5" />
           </button>
         </form>
       </motion.div>
