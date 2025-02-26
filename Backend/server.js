@@ -6,12 +6,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const http = require("http");
 const { Server } = require("socket.io");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
-const vision = require('@google-cloud/vision'); // Google Cloud Vision API
-const { Client } = require("@googlemaps/google-maps-services-js"); // Google Maps API
-const axios = require("axios"); // Import axios for proxying requests
+const axios = require("axios");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,8 +17,8 @@ const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://placevista.onrender.com"],
     methods: ["GET", "POST"],
-    credentials: true
-  }
+    credentials: true,
+  },
 });
 
 // ✅ Database connection
@@ -34,17 +29,21 @@ const pool = new Pool({
 
 // ✅ Middleware
 app.use(express.json());
-app.use(cors({ 
-  origin: ["http://localhost:5173", "https://placevista.onrender.com"],
-  methods: ["GET", "POST"],
-  credentials: true 
-}));
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "https://placevista.onrender.com"],
+    methods: ["GET", "POST"],
+    credentials: true,
+  })
+);
 
 // ✅ Proxy route for external API (Fixes CORS issue)
 app.get("/api/chat", async (req, res) => {
   try {
     const userMessage = req.query.msg;
-    const response = await axios.get(`https://api.monkedev.com/fun/chat?msg=${encodeURIComponent(userMessage)}`);
+    const response = await axios.get(
+      `https://api.monkedev.com/fun/chat?msg=${encodeURIComponent(userMessage)}`
+    );
     res.json(response.data);
   } catch (error) {
     console.error("Error fetching chat response:", error);
@@ -52,9 +51,20 @@ app.get("/api/chat", async (req, res) => {
   }
 });
 
+// ✅ GET MESSAGES Route
+app.get("/messages", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM messages ORDER BY created_at DESC LIMIT 50"); // Example: Get last 50 messages
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching messages from database:", error);
+    res.status(500).json({ error: "Failed to fetch messages" });
+  }
+});
+
 // ✅ SOCKET.IO Chat Handling
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("✅ User connected:", socket.id); // Add this line!
 
   socket.on("message", async (msg) => {
     try {
@@ -96,7 +106,9 @@ app.post("/signup", async (req, res) => {
       [fullname, email, hashedPassword]
     );
 
-    res.status(201).json({ message: "User registered successfully", user: result.rows[0] });
+    res
+      .status(201)
+      .json({ message: "User registered successfully", user: result.rows[0] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Signup failed" });
@@ -109,12 +121,16 @@ app.post("/login", async (req, res) => {
 
   try {
     const user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
-    if (user.rows.length === 0) return res.status(400).json({ error: "Invalid credentials" });
+    if (user.rows.length === 0)
+      return res.status(400).json({ error: "Invalid credentials" });
 
     const isValidPassword = await bcrypt.compare(password, user.rows[0].password);
-    if (!isValidPassword) return res.status(400).json({ error: "Invalid credentials" });
+    if (!isValidPassword)
+      return res.status(400).json({ error: "Invalid credentials" });
 
-    const token = jwt.sign({ userId: user.rows[0].id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ userId: user.rows[0].id }, process.env.JWT_SECRET, {
+      expiresIn: "1h",
+    });
 
     res.json({ message: "Login successful", token, user: user.rows[0] });
   } catch (err) {
@@ -124,4 +140,6 @@ app.post("/login", async (req, res) => {
 });
 
 // ✅ Start server with Socket.io
-server.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+server.listen(PORT, () =>
+  console.log(`🚀 Server running on http://localhost:${PORT}`)
+);
