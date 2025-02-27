@@ -95,13 +95,14 @@ app.post("/api/voice-to-text", upload.single("audio"), async (req, res) => {
 // ✅ GET MESSAGES Route
 app.get("/messages", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM messages ORDER BY created_at DESC LIMIT 50");
+    const result = await pool.query("SELECT id, text, sender, created_at FROM messages ORDER BY created_at ASC");
     res.json(result.rows);
   } catch (error) {
     console.error("❌ Error fetching messages:", error);
-    res.status(500).json({ error: "Failed to fetch messages" });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 // ✅ SOCKET.IO Chat Handling
 io.on("connection", (socket) => {
