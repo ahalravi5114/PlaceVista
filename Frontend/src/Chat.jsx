@@ -52,48 +52,39 @@ const Chat = () => {
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-
+  
     console.log("📤 Sending message:", input);
-
+  
     const newMessage = {
       id: Date.now(),
       text: input,
       sender: "You",
       time: new Date().toLocaleTimeString(),
     };
-
+  
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
-
+  
     try {
-      let apiUrl = `https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill`;
-
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer YOUR_HUGGINGFACE_API_KEY",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ inputs: input }),
-      });
-
+      const response = await fetch(`https://api.safone.dev/chatbot?message=${encodeURIComponent(input)}`);
+      
       if (!response.ok) {
         throw new Error("Failed to fetch response");
       }
-
+  
       const data = await response.json();
       let botMessage = {
         id: Date.now() + 1,
-        text: data.generated_text || "I'm not sure how to respond to that!",
+        text: data.response || "I didn't get that. Can you rephrase?",
         sender: "Bot",
         time: new Date().toLocaleTimeString(),
       };
-
+  
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
       console.error("❌ Error fetching chatbot response:", error);
     }
-  };
+  };  
 
   const handleAudioInput = () => {
     const recognition =
