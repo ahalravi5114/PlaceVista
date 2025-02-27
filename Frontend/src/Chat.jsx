@@ -65,22 +65,24 @@ const Chat = () => {
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
 
-    // ✅ Send message to your backend instead of external API
     try {
-      const response = await fetch(
-        `https://placevista.onrender.com/api/chat?msg=${encodeURIComponent(
-          input
-        )}`
-      );
+      let apiUrl = `https://api.monkedev.com/fun/chat?msg=${encodeURIComponent(input)}`;
 
+      if (input.toLowerCase().includes("where am i")) {
+        apiUrl = "https://ipapi.co/json/";
+      }
+
+      const response = await fetch(apiUrl);
       if (!response.ok) {
-        throw new Error("Failed to fetch chat response");
+        throw new Error("Failed to fetch response");
       }
 
       const data = await response.json();
-      const botMessage = {
+      let botMessage = {
         id: Date.now() + 1,
-        text: data.response,
+        text: input.toLowerCase().includes("where am i")
+          ? `📍 You are at: ${data.city}, ${data.region}, ${data.country_name}`
+          : data.response,
         sender: "Bot",
         time: new Date().toLocaleTimeString(),
       };
@@ -111,40 +113,51 @@ const Chat = () => {
     input.type = "file";
     input.accept = "image/*";
     input.capture = "environment";
-    input.onchange = (event) => {
+    input.onchange = async (event) => {
       const file = event.target.files[0];
+      if (!file) return;
+
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
+        const imageUrl = reader.result;
         const imageMessage = {
           id: Date.now(),
           text: "📷 Image Uploaded",
           sender: "You",
-          imageUrl: reader.result,
+          imageUrl,
           time: new Date().toLocaleTimeString(),
         };
         setMessages((prev) => [...prev, imageMessage]);
-      };
-      reader.readAsDataURL(file);
-    };
-    input.click();
-  };
 
-  const handleFileUpload = () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "*/*";
-    input.onchange = (event) => {
-      const file = event.target.files[0];
-      const reader = new FileReader();
-      reader.onload = () => {
-        const fileMessage = {
-          id: Date.now(),
-          text: `📎 File Uploaded: ${file.name}`,
-          sender: "You",
-          fileUrl: reader.result,
-          time: new Date().toLocaleTimeString(),
-        };
-        setMessages((prev) => [...prev, fileMessage]);
+        try {
+          const formData = new FormData();
+          formData.append("image", file);
+
+          const response = await fetch("https://api.ocr.space/parse/image", {
+            method: "POST",
+            headers: {
+              apikey: "YOUR_OCR_API_KEY",
+            },
+            body: formData,
+          });
+
+          if (!response.ok) throw new Error("Image processing failed");
+
+          const result = await response.json();
+          const detectedText = result.ParsedResults[0]?.ParsedText || "Unknown";
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now() + 1,
+              text: `🗺️ Location detected: ${detectedText}`,
+              sender: "Bot",
+              time: new Date().toLocaleTimeString(),
+            },
+          ]);
+        } catch (error) {
+          console.error("❌ Error detecting location from image:", error);
+        }
       };
       reader.readAsDataURL(file);
     };
@@ -153,24 +166,11 @@ const Chat = () => {
 
   return (
     <div className="h-screen flex bg-gradient-to-br from-indigo-700 to-yellow-500">
-      {/* Sidebar (Hidden on small screens) */}
-      <div className="w-64 bg-gradient-to-br from-indigo-700 to-yellow-500 text-white p-4 hidden md:flex flex-col">
-        <h2 className="text-xl font-bold">PlaceVista</h2>
-        <p className="mt-4 text-gray-400">Chat History</p>
-        <ul className="mt-2 space-y-2">
-          <li className="p-2 bg-indigo-700 rounded-lg cursor-pointer">
-            Recent Chat
-          </li>
-        </ul>
-      </div>
-
-      {/* Main Chat Area */}
       <motion.div className="flex-1 flex flex-col items-center bg-white w-full max-w-full mx-auto p-6">
         <div className="bg-yellow-600 text-white p-4 w-full text-center font-bold text-xl rounded-t-2xl">
           PlaceVista Chat
         </div>
 
-        {/* Messages */}
         <div className="flex-1 w-full p-4 overflow-y-auto space-y-4 scrollbar-hide">
           {messages.map((msg, index) => (
             <motion.div
@@ -189,13 +189,20 @@ const Chat = () => {
               >
                 <p className="text-sm">{msg.text}</p>
                 <p className="text-xs text-gray-200 mt-1 text-right">{msg.time}</p>
+                {msg.imageUrl && (
+                  <img
+                    src={msg.imageUrl}
+                    alt="Uploaded"
+                    className="mt-2 rounded-lg"
+                    style={{ maxWidth: "100px" }}
+                  />
+                )}
               </div>
             </motion.div>
           ))}
           <div ref={chatEndRef} />
         </div>
 
-        {/* Input Area */}
         <form
           onSubmit={sendMessage}
           className="p-4 w-full bg-gray-100 flex items-center rounded-b-2xl shadow-inner space-y-4"
@@ -214,13 +221,6 @@ const Chat = () => {
               className="w-10 h-10 flex items-center justify-center bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
             >
               <CameraIcon className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleFileUpload}
-              className="w-10 h-10 flex items-center justify-center bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-            >
-              <PaperClipIcon className="w-5 h-5" />
             </button>
           </div>
 
