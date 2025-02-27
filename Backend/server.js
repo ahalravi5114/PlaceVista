@@ -41,25 +41,18 @@ app.use(
 );
 
 // ✅ Chatbot API Route
-app.get("/api/chat", async (req, res) => {
+app.post('/chat', async (req, res) => {
   try {
-    const userMessage = req.query.msg;
-    let botResponse = "I didn't understand that.";
-
-    if (userMessage.toLowerCase().includes("where am i")) {
-      const locationResponse = await axios.get("https://ipapi.co/json/");
-      botResponse = `You are in ${locationResponse.data.city}, ${locationResponse.data.country_name}.`;
-    } else {
-      const chatResponse = await axios.get(
-        `https://api.monkedev.com/fun/chat?msg=${encodeURIComponent(userMessage)}`
+      const { message } = req.body;
+      const response = await axios.post(
+          'https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill',
+          { inputs: message },
+          { headers: { Authorization: `Bearer ${process.env.HF_API_KEY}` } }
       );
-      botResponse = chatResponse.data.response;
-    }
-
-    res.json({ response: botResponse });
+      res.json({ reply: response.data.generated_text });
   } catch (error) {
-    console.error("❌ Error fetching chat response:", error);
-    res.status(500).json({ error: "Failed to fetch chat response" });
+      console.error('Error fetching chatbot response:', error);
+      res.status(500).json({ error: 'Failed to fetch chatbot response' });
   }
 });
 

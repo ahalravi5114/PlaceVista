@@ -66,13 +66,17 @@ const Chat = () => {
     setInput("");
 
     try {
-      let apiUrl = `https://api.monkedev.com/fun/chat?msg=${encodeURIComponent(input)}`;
+      let apiUrl = `https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill`;
 
-      if (input.toLowerCase().includes("where am i")) {
-        apiUrl = "https://ipapi.co/json/";
-      }
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer YOUR_HUGGINGFACE_API_KEY",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ inputs: input }),
+      });
 
-      const response = await fetch(apiUrl);
       if (!response.ok) {
         throw new Error("Failed to fetch response");
       }
@@ -80,9 +84,7 @@ const Chat = () => {
       const data = await response.json();
       let botMessage = {
         id: Date.now() + 1,
-        text: input.toLowerCase().includes("where am i")
-          ? `📍 You are at: ${data.city}, ${data.region}, ${data.country_name}`
-          : data.response,
+        text: data.generated_text || "I'm not sure how to respond to that!",
         sender: "Bot",
         time: new Date().toLocaleTimeString(),
       };
