@@ -40,55 +40,81 @@ app.use(
   })
 );
 
-// ✅ Chatbot API Route
-app.post('/chat', async (req, res) => {
+// ✅ Chatbot using Gemini API
+test = async function callGeminiChatbot(message) {
   try {
-      const { message } = req.body;
-      const response = await axios.post(
-          'https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill',
-          { inputs: message },
-          { headers: { Authorization: `Bearer ${process.env.HF_API_KEY}` } }
-      );
-      res.json({ reply: response.data.generated_text });
+    const response = await axios.post(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateText",
+      { prompt: message },
+      { params: { key: process.env.GEMINI_API_KEY } }
+    );
+    return response.data.candidates[0].output || "I didn't understand that.";
   } catch (error) {
-      console.error('Error fetching chatbot response:', error);
-      res.status(500).json({ error: 'Failed to fetch chatbot response' });
+    console.error("❌ Error with Gemini chatbot:", error);
+    return "Error fetching chatbot response.";
+  }
+};
+
+app.post("/chat", async (req, res) => {
+  try {
+    const { message } = req.body;
+    const reply = await callGeminiChatbot(message);
+    res.json({ reply });
+  } catch (error) {
+    res.status(500).json({ error: "Chatbot error" });
   }
 });
 
-// ✅ Image Location Detection (Dummy API)
-app.post("/api/image-location", async (req, res) => {
+// ✅ Image Recognition using Gemini Vision API
+app.post("/api/image-location", multer().single("image"), async (req, res) => {
   try {
-    // Dummy response, replace with actual image processing API
-    res.json({ location: "Paris, France" });
+    if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+
+    const base64Image = req.file.buffer.toString("base64");
+    const response = await axios.post(
+      "https://vision.googleapis.com/v1/images:annotate",
+      {
+        requests: [
+          {
+            image: { content: base64Image },
+            features: [{ type: "LANDMARK_DETECTION" }],
+          },
+        ],
+      },
+      { params: { key: process.env.GEMINI_API_KEY } }
+    );
+
+    const landmarks = response.data.responses[0]?.landmarkAnnotations || [];
+    const location = landmarks.length > 0 ? landmarks[0].description : "Unknown location";
+
+    res.json({ location });
   } catch (error) {
-    console.error("❌ Error processing image:", error);
+    console.error("❌ Image recognition error:", error);
     res.status(500).json({ error: "Failed to process image" });
   }
 });
 
-// ✅ Voice Note Processing
-const upload = multer({ storage: multer.memoryStorage() });
-
-app.post("/api/voice-to-text", upload.single("audio"), async (req, res) => {
+// ✅ Voice-to-Text using Gemini Speech API
+app.post("/api/voice-to-text", multer().single("audio"), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ error: "No audio uploaded" });
 
-    const client = new speech.SpeechClient();
     const audioBytes = req.file.buffer.toString("base64");
+    const response = await axios.post(
+      "https://speech.googleapis.com/v1/speech:recognize",
+      {
+        config: { encoding: "LINEAR16", sampleRateHertz: 16000, languageCode: "en-US" },
+        audio: { content: audioBytes },
+      },
+      { params: { key: process.env.GEMINI_API_KEY } }
+    );
 
-    const request = {
-      audio: { content: audioBytes },
-      config: { encoding: "LINEAR16", sampleRateHertz: 16000, languageCode: "en-US" },
-    };
-
-    const [response] = await client.recognize(request);
-    const transcription = response.results.map((result) => result.alternatives[0].transcript).join("\n");
+    const transcription = response.data.results?.map(r => r.alternatives[0].transcript).join(" ") || "Could not understand audio";
 
     res.json({ text: transcription });
   } catch (error) {
-    console.error("❌ Error processing voice:", error);
-    res.status(500).json({ error: "Failed to convert voice to text" });
+    console.error("❌ Voice processing error:", error);
+    res.status(500).json({ error: "Failed to process audio" });
   }
 });
 
