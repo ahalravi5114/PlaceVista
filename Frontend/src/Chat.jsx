@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   PaperAirplaneIcon,
   MicrophoneIcon,
   CameraIcon,
-  PaperClipIcon,
 } from "@heroicons/react/solid";
 import Avatar from "react-avatar";
 import { io } from "socket.io-client";
 import { motion } from "framer-motion";
+import axios from "axios";
 
 const socket = io("https://placevista.onrender.com", {
   transports: ["websocket", "polling"],
@@ -17,24 +17,10 @@ const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const chatEndRef = useRef(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     console.log("🔌 Connecting to Socket.io...");
-
-    const fetchMessages = async () => {
-      try {
-        const response = await fetch("https://placevista.onrender.com/messages");
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        const data = await response.json();
-        setMessages(data);
-      } catch (error) {
-        console.error("❌ Error fetching messages:", error);
-      }
-    };
-
-    fetchMessages();
 
     const handleMessageReceived = (message) => {
       console.log("📨 New message received:", message);
@@ -52,39 +38,43 @@ const Chat = () => {
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-  
-    console.log("📤 Sending message:", input);
-  
+
+    setLoading(true);
+
     const newMessage = {
       id: Date.now(),
       text: input,
       sender: "You",
       time: new Date().toLocaleTimeString(),
     };
-  
+
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
-  
+
     try {
-      const response = await fetch(`https://api.safone.dev/chatbot?message=${encodeURIComponent(input)}`);
-      
-      if (!response.ok) {
-        throw new Error("Failed to fetch response");
-      }
-  
-      const data = await response.json();
-      let botMessage = {
+      const response = await axios.post("/api/chat", { message: input });
+      const botMessage = {
         id: Date.now() + 1,
-        text: data.response || "I didn't get that. Can you rephrase?",
+        text: response.data.reply,
         sender: "Bot",
         time: new Date().toLocaleTimeString(),
       };
-  
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
-      console.error("❌ Error fetching chatbot response:", error);
+      console.error("❌ Error fetching Gemini response:", error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          text: "Error fetching chatbot response.",
+          sender: "Bot",
+          time: new Date().toLocaleTimeString(),
+        },
+      ]);
+    } finally {
+      setLoading(false);
     }
-  };  
+  };
 
   const handleAudioInput = () => {
     const recognition =
@@ -92,69 +82,72 @@ const Chat = () => {
     recognition.lang = "en-US";
     recognition.start();
 
-    recognition.onresult = (event) => {
-      setInput(event.results[0][0].transcript);
+    recognition.onresult = async (event) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(transcript);
+      sendMessage({ preventDefault: () => {} });
     };
 
-    recognition.onerror = () => {
-      console.error("Speech recognition error.");
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+      if (event.error === "no-speech") {
+        alert("No speech was detected. Please try again.");
+      }
     };
   };
 
-  const handleCameraCapture = () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.capture = "environment";
-    input.onchange = async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
+  const handleImageUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const imageUrl = reader.result;
-        const imageMessage = {
+    setLoading(true);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const imageUrl = reader.result;
+      setMessages((prev) => [
+        ...prev,
+        {
           id: Date.now(),
           text: "📷 Image Uploaded",
           sender: "You",
           imageUrl,
           time: new Date().toLocaleTimeString(),
-        };
-        setMessages((prev) => [...prev, imageMessage]);
+        },
+      ]);
 
-        try {
-          const formData = new FormData();
-          formData.append("image", file);
+      try {
+        const formData = new FormData();
+        formData.append("image", file);
+        const response = await axios.post("/api/image-location", formData);
 
-          const response = await fetch("https://api.ocr.space/parse/image", {
-            method: "POST",
-            headers: {
-              apikey: "YOUR_OCR_API_KEY",
-            },
-            body: formData,
-          });
+        const location = response.data.location;
 
-          if (!response.ok) throw new Error("Image processing failed");
-
-          const result = await response.json();
-          const detectedText = result.ParsedResults[0]?.ParsedText || "Unknown";
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now() + 1,
-              text: `🗺️ Location detected: ${detectedText}`,
-              sender: "Bot",
-              time: new Date().toLocaleTimeString(),
-            },
-          ]);
-        } catch (error) {
-          console.error("❌ Error detecting location from image:", error);
-        }
-      };
-      reader.readAsDataURL(file);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now() + 1,
+            text: `🗺️ Location: ${location}`,
+            sender: "Bot",
+            time: new Date().toLocaleTimeString(),
+          },
+        ]);
+      } catch (error) {
+        console.error("❌ Error analyzing image:", error);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now() + 1,
+            text: "❌ Error analyzing image.",
+            sender: "Bot",
+            time: new Date().toLocaleTimeString(),
+          },
+        ]);
+      } finally {
+        setLoading(false);
+      }
     };
-    input.click();
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -195,6 +188,7 @@ const Chat = () => {
           ))}
           <div ref={chatEndRef} />
         </div>
+        {loading && <p>Loading...</p>}
 
         <form
           onSubmit={sendMessage}
@@ -208,13 +202,19 @@ const Chat = () => {
             >
               <MicrophoneIcon className="w-5 h-5" />
             </button>
-            <button
-              type="button"
-              onClick={handleCameraCapture}
-              className="w-10 h-10 flex items-center justify-center bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+              id="file-upload"
+            />
+            <label
+              htmlFor="file-upload"
+              className="w-10 h-10 flex items-center justify-center bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 cursor-pointer"
             >
               <CameraIcon className="w-5 h-5" />
-            </button>
+            </label>
           </div>
 
           <input
